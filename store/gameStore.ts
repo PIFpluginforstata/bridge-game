@@ -41,6 +41,39 @@ const INITIAL_GAME_STATE: GameState = {
   lastWinner: null,
 };
 
+// ✅ 优化后的 PeerJS 配置：结合两者优点
+const PEER_CONFIG = {
+  debug: 2, // 开启调试日志，方便排查问题
+  host: '0.peerjs.com', // 明确指定服务器
+  port: 443,
+  secure: true,
+  config: {
+    iceServers: [
+      // 多个 STUN 服务器提供冗余
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+      
+      // 🇨🇳 中国用户推荐（可选，穿透率高）
+      { urls: 'stun:stun.qq.com:3478' },
+      
+      // ⚠️ 关键：保留 TURN 服务器作为后备方案
+      // 当 STUN 失败时（严格 NAT 环境）自动切换
+      { 
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
+      // 备用 TURN 服务器（443端口）
+      {
+        urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      }
+    ]
+  }
+};
+
 export const useGameStore = create<GameStore>((set, get) => ({
   peer: null,
   conn: null,
@@ -54,42 +87,44 @@ export const useGameStore = create<GameStore>((set, get) => ({
   createGame: async () => {
     set({ status: 'initializing', errorMessage: null, role: 'host' });
     
-    // Destroy old peer if exists
-    if (get().peer) get().peer?.destroy();
+    // 销毁旧的 peer 连接
+    if (get().peer) {
+      get().peer?.destroy();
+    }
 
-    // ✅ 修复：添加完整的 PeerJS 配置
-    const peer = new Peer(undefined, {
-      host: '0.peerjs.com',
-      port: 443,
-      secure: true,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' },
-          { 
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          }
-        ]
-      }
-    });
+    // 使用优化后的配置创建 Peer
+    const peer = new Peer(undefined, PEER_CONFIG);
 
     return new Promise((resolve) => {
       peer.on('open', (id) => {
+        console.log('✅ Host Peer ID:', id);
         set({ myId: id, peer, status: 'waiting_for_peer' });
         resolve(id);
       });
 
       peer.on('error', (err) => {
-        set({ status: 'error', errorMessage: 'Connection failed: ' + err.type });
+        console.error('❌ Peer Error:', err);
+        let message = 'Connection failed: ' + err.type;
+        
+        // 针对常见错误给出中文提示
+        if (err.type === 'network') {
+          message = '网络错误，请检查网络连接';
+        } else if (err.type === 'server-error') {
+          message = 'PeerJS 服务器暂时不可用，请稍后重试';
+        } else if (err.type === 'ssl-unavailable') {
+          message = '需要 HTTPS 连接，请确保使用安全连接';
+        }
+        
+        set({ status: 'error', errorMessage: message });
       });
 
       peer.on('connection', (conn) => {
+        console.log('📞 收到连接请求:', conn.peer);
+        
         conn.on('open', () => {
-           // Wait for handshake
+           console.log('✅ 连接已建立!');
            set({ conn, status: 'connected', peerId: conn.peer });
-           // Host immediately initializes the game logic but waits to send until requested or stable
+           // Host 初始化游戏
            get().resetGame(); 
         });
 
@@ -97,47 +132,59 @@ export const useGameStore = create<GameStore>((set, get) => ({
           if (data.type === 'ACTION') {
             get().processAction(data.payload, 'peer');
           } else if (data.type === 'SYNC_REQUEST') {
-            // Peer is asking for the current state explicitly
+            // Peer 请求同步状态
             conn.send({ type: 'GAME_STATE_UPDATE', payload: get().gameState });
           }
         });
         
-        conn.on('close', () => set({ status: 'error', errorMessage: 'Opponent disconnected' }));
+        conn.on('close', () => {
+          console.log('⚠️ 连接断开');
+          set({ status: 'error', errorMessage: '对手已断开连接' });
+        });
+        
+        conn.on('error', (err) => {
+          console.error('❌ Connection Level Error:', err);
+        });
       });
     });
   },
 
   joinGame: (hostId) => {
     set({ status: 'initializing', errorMessage: null, role: 'peer' });
-    if (get().peer) get().peer?.destroy();
+    
+    if (get().peer) {
+      get().peer?.destroy();
+    }
 
-    // ✅ 修复：添加完整的 PeerJS 配置
-    const peer = new Peer(undefined, {
-      host: '0.peerjs.com',
-      port: 443,
-      secure: true,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' },
-          { 
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          }
-        ]
-      }
-    });
+    const peer = new Peer(undefined, PEER_CONFIG);
 
     peer.on('open', (id) => {
+      console.log('✅ Peer ID:', id);
       set({ myId: id, peer, status: 'connecting' });
       
-      const conn = peer.connect(hostId, { reliable: true });
+      console.log('🔌 正在连接到房主:', hostId);
+      const conn = peer.connect(hostId, { 
+        reliable: true,
+        serialization: 'json' // 确保数据序列化
+      });
       
+      // 添加连接超时检测（15秒）
+      const timeout = setTimeout(() => {
+        if (get().status === 'connecting') {
+          conn.close();
+          set({ 
+            status: 'error', 
+            errorMessage: '连接超时，请检查房间号是否正确' 
+          });
+        }
+      }, 15000);
+
       conn.on('open', () => {
+        clearTimeout(timeout);
+        console.log('✅ 已连接到房主!');
         set({ conn, peerId: hostId, status: 'connected' });
         
-        // HANDSHAKE: Explicitly ask host for state to ensure connection is bidirectional
+        // 明确请求 Host 同步状态
         conn.send({ type: 'SYNC_REQUEST' });
       });
 
@@ -148,178 +195,206 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
 
       conn.on('error', (err) => {
-        set({ status: 'error', errorMessage: 'Connection Error' });
+        clearTimeout(timeout);
+        console.error('❌ Connection Error:', err);
+        set({ 
+          status: 'error', 
+          errorMessage: '连接失败: ' + err 
+        });
       });
       
-      conn.on('close', () => set({ status: 'error', errorMessage: 'Host disconnected' }));
+      conn.on('close', () => {
+        clearTimeout(timeout);
+        console.log('⚠️ 房主断开连接');
+        set({ status: 'error', errorMessage: '房主已断开连接' });
+      });
     });
 
     peer.on('error', (err) => {
-      set({ status: 'error', errorMessage: 'Could not connect to peer server. ' + err.type });
+      console.error('❌ Peer Error:', err);
+      
+      let message = 'Join Error: ' + err.type;
+      if (err.type === 'peer-unavailable') {
+        message = '找不到该房间号，请检查 ID 是否正确';
+      } else if (err.type === 'network') {
+        message = '网络连接失败，请检查网络';
+      } else if (err.type === 'ssl-unavailable') {
+        message = '需要 HTTPS 连接，请确保使用安全连接';
+      } else if (err.type === 'invalid-id') {
+        message = '房间号格式不正确';
+      }
+      
+      set({ status: 'error', errorMessage: message });
     });
   },
   
   sendAction: (action) => {
-      const { role, conn, processAction } = get();
-      if (role === 'host') {
-          processAction(action, 'host');
-      } else {
-          conn?.send({ type: 'ACTION', payload: action });
-      }
+    const { role, conn, processAction } = get();
+    if (role === 'host') {
+      // Host 直接处理自己的动作
+      processAction(action, 'host');
+    } else {
+      // Peer 发送动作给 Host
+      conn?.send({ type: 'ACTION', payload: action });
+    }
   },
   
   resetGame: () => {
-      const fullDeck = generateDeck();
-      const shuffled = shuffleDeck(fullDeck);
-      const playingDeck = shuffled.slice(14);
-      const hand1 = sortHand(playingDeck.slice(0, 19));
-      const hand2 = sortHand(playingDeck.slice(19, 38));
-      
-      const prevDealer = get().gameState.dealer;
-      const newDealer = prevDealer === 'host' ? 'peer' : 'host';
-      
-      // DEEP RESET: Create a fresh object for every nested property
-      // Do NOT spread INITIAL_GAME_STATE to avoid reference reuse bugs
-      const newState: GameState = {
-          phase: 'BIDDING',
-          hands: { host: hand1, peer: hand2 },
-          dealer: newDealer,
-          turn: newDealer,
-          currentBid: null,
-          passCount: 0,
-          declarer: null,
-          trump: null,
-          contractTarget: 0,
-          tricks: { host: 0, peer: 0 }, // FRESH OBJECT
-          wonCards: { host: [], peer: [] }, // FRESH OBJECT
-          currentTrick: { leader: newDealer, cards: [] },
-          trumpBroken: false,
-          readyForNext: { host: false, peer: false }, // FRESH OBJECT
-          lastWinner: null,
-      };
-      
-      set({ gameState: newState });
-      get().conn?.send({ type: 'GAME_STATE_UPDATE', payload: newState });
+    const fullDeck = generateDeck();
+    const shuffled = shuffleDeck(fullDeck);
+    const playingDeck = shuffled.slice(14);
+    const hand1 = sortHand(playingDeck.slice(0, 19));
+    const hand2 = sortHand(playingDeck.slice(19, 38));
+    
+    const prevDealer = get().gameState.dealer;
+    const newDealer = prevDealer === 'host' ? 'peer' : 'host';
+    
+    // ✅ 深度重置：创建全新的对象，避免引用共享问题
+    const newState: GameState = {
+      phase: 'BIDDING',
+      hands: { host: hand1, peer: hand2 },
+      dealer: newDealer,
+      turn: newDealer,
+      currentBid: null,
+      passCount: 0,
+      declarer: null,
+      trump: null,
+      contractTarget: 0,
+      tricks: { host: 0, peer: 0 }, // 全新对象
+      wonCards: { host: [], peer: [] }, // 全新对象
+      currentTrick: { leader: newDealer, cards: [] },
+      trumpBroken: false,
+      readyForNext: { host: false, peer: false }, // 全新对象
+      lastWinner: null,
+    };
+    
+    set({ gameState: newState });
+    get().conn?.send({ type: 'GAME_STATE_UPDATE', payload: newState });
   },
   
   processAction: (action, fromPlayer) => {
-      const { gameState, role, conn, resetGame } = get();
-      
-      if (action.type !== 'READY_NEXT' && gameState.phase !== 'GAME_OVER' && gameState.turn !== fromPlayer) {
-          return; // Ignore moves out of turn
-      }
-      
-      let newState = { ...gameState };
-      
-      switch (action.type) {
-          case 'BID':
-              if (action.payload?.bid) {
-                  newState.currentBid = action.payload.bid;
-                  newState.turn = fromPlayer === 'host' ? 'peer' : 'host';
-                  newState.passCount = 0;
-              }
-              break;
-              
-          case 'PASS':
-              newState.passCount += 1;
-              if (newState.currentBid) {
-                  newState.phase = 'PLAYING';
-                  newState.declarer = newState.currentBid.bidder;
-                  newState.trump = newState.currentBid.suit;
-                  newState.contractTarget = BASE_TRICK_TARGET + newState.currentBid.level;
-                  newState.turn = newState.declarer;
-                  newState.currentTrick = { leader: newState.declarer, cards: [] };
-              } else {
-                  if (newState.passCount >= 2) {
-                      resetGame();
-                      return;
-                  } else {
-                      newState.turn = fromPlayer === 'host' ? 'peer' : 'host';
-                  }
-              }
-              break;
-              
-          case 'PLAY_CARD':
-              if (!action.payload?.cardId) return;
-              const hand = newState.hands[fromPlayer];
-              const card = hand.find(c => c.id === action.payload?.cardId);
-              if (!card) return;
-              
-              const validCheck = canPlayCard(card, hand, newState, fromPlayer);
-              if (!validCheck.valid) return;
-              
-              newState.hands = { ...newState.hands, [fromPlayer]: hand.filter(c => c.id !== card.id) };
-              newState.currentTrick.cards.push({ player: fromPlayer, card });
-              
-              if (newState.trump !== 'NT' && card.suit === newState.trump) newState.trumpBroken = true;
-              
-              if (newState.currentTrick.cards.length < 2) {
-                  newState.turn = fromPlayer === 'host' ? 'peer' : 'host';
-              }
-              break;
-              
-          case 'READY_NEXT':
-               newState.readyForNext = { ...newState.readyForNext, [fromPlayer]: true };
-               if (newState.readyForNext.host && newState.readyForNext.peer) {
-                   resetGame();
-                   return;
-               }
-               break;
-      }
-      
-      set({ gameState: newState });
-      conn?.send({ type: 'GAME_STATE_UPDATE', payload: newState });
-      
-      if (newState.phase === 'PLAYING' && newState.currentTrick.cards.length === 2) {
-           setTimeout(() => {
-               const current = get().gameState;
-               // Double check we are still in playing phase to avoid race conditions
-               if (current.phase !== 'PLAYING' || current.currentTrick.cards.length !== 2) return;
-               
-               const winner = determineTrickWinner(current.currentTrick.cards, current.trump);
-               const wonCards = current.currentTrick.cards.map(c => c.card);
+    const { gameState, role, conn, resetGame } = get();
+    
+    // 验证回合（除了 READY_NEXT）
+    if (action.type !== 'READY_NEXT' && gameState.phase !== 'GAME_OVER' && gameState.turn !== fromPlayer) {
+      return; // 忽略非当前回合的操作
+    }
+    
+    let newState = { ...gameState };
+    
+    switch (action.type) {
+      case 'BID':
+        if (action.payload?.bid) {
+          newState.currentBid = action.payload.bid;
+          newState.turn = fromPlayer === 'host' ? 'peer' : 'host';
+          newState.passCount = 0;
+        }
+        break;
+        
+      case 'PASS':
+        newState.passCount += 1;
+        if (newState.currentBid) {
+          // 有人叫牌后 Pass，进入游戏阶段
+          newState.phase = 'PLAYING';
+          newState.declarer = newState.currentBid.bidder;
+          newState.trump = newState.currentBid.suit;
+          newState.contractTarget = BASE_TRICK_TARGET + newState.currentBid.level;
+          newState.turn = newState.declarer;
+          newState.currentTrick = { leader: newState.declarer, cards: [] };
+        } else {
+          // 两人都 Pass，重新发牌
+          if (newState.passCount >= 2) {
+            resetGame();
+            return;
+          } else {
+            newState.turn = fromPlayer === 'host' ? 'peer' : 'host';
+          }
+        }
+        break;
+        
+      case 'PLAY_CARD':
+        if (!action.payload?.cardId) return;
+        const hand = newState.hands[fromPlayer];
+        const card = hand.find(c => c.id === action.payload?.cardId);
+        if (!card) return;
+        
+        // 验证出牌合法性
+        const validCheck = canPlayCard(card, hand, newState, fromPlayer);
+        if (!validCheck.valid) return;
+        
+        // 从手牌中移除并加入当前墩
+        newState.hands = { ...newState.hands, [fromPlayer]: hand.filter(c => c.id !== card.id) };
+        newState.currentTrick.cards.push({ player: fromPlayer, card });
+        
+        // 标记将牌是否已破门
+        if (newState.trump !== 'NT' && card.suit === newState.trump) {
+          newState.trumpBroken = true;
+        }
+        
+        // 如果还没出够两张牌，切换回合
+        if (newState.currentTrick.cards.length < 2) {
+          newState.turn = fromPlayer === 'host' ? 'peer' : 'host';
+        }
+        break;
+        
+      case 'READY_NEXT':
+        newState.readyForNext = { ...newState.readyForNext, [fromPlayer]: true };
+        if (newState.readyForNext.host && newState.readyForNext.peer) {
+          resetGame();
+          return;
+        }
+        break;
+    }
+    
+    set({ gameState: newState });
+    conn?.send({ type: 'GAME_STATE_UPDATE', payload: newState });
+    
+    // ✅ 自动判断墩的赢家
+    if (newState.phase === 'PLAYING' && newState.currentTrick.cards.length === 2) {
+      setTimeout(() => {
+        const current = get().gameState;
+        // 双重检查，避免竞态条件
+        if (current.phase !== 'PLAYING' || current.currentTrick.cards.length !== 2) return;
+        
+        const winner = determineTrickWinner(current.currentTrick.cards, current.trump);
+        const wonCards = current.currentTrick.cards.map(c => c.card);
 
-               // Create a safe copy of the state structure to avoid mutation issues
-               const nextState = { 
-                   ...current,
-                   tricks: { ...current.tricks },
-                   wonCards: { ...current.wonCards } 
-               };
+        // 创建安全的状态副本
+        const nextState = { 
+          ...current,
+          tricks: { ...current.tricks },
+          wonCards: { ...current.wonCards } 
+        };
 
-               nextState.tricks[winner] += 1;
-               
-               // Add to history
-               nextState.wonCards[winner] = [...nextState.wonCards[winner], ...wonCards];
-
-               nextState.lastWinner = winner;
-               nextState.turn = winner;
-               nextState.currentTrick = { leader: winner, cards: [] };
-               
-               // EARLY TERMINATION LOGIC
-               const totalTricksPlayed = nextState.tricks.host + nextState.tricks.peer;
-               const remainingTricks = TOTAL_TRICKS - totalTricksPlayed;
-               const declarer = nextState.declarer!;
-               const target = nextState.contractTarget;
-
-               const declarerWins = nextState.tricks[declarer];
-               
-               // Condition 1: Declarer already won enough
-               if (declarerWins >= target) {
-                   nextState.phase = 'GAME_OVER';
-               }
-               // Condition 2: Mathematically impossible for Declarer to win enough
-               // Even if declarer wins ALL remaining tricks, they won't reach target
-               else if ((declarerWins + remainingTricks) < target) {
-                   nextState.phase = 'GAME_OVER';
-               }
-               // Fallback: All tricks played
-               else if (remainingTricks === 0) {
-                   nextState.phase = 'GAME_OVER';
-               }
-               
-               set({ gameState: nextState });
-               get().conn?.send({ type: 'GAME_STATE_UPDATE', payload: nextState });
-           }, 1500);
-      }
+        nextState.tricks[winner] += 1;
+        nextState.wonCards[winner] = [...nextState.wonCards[winner], ...wonCards];
+        nextState.lastWinner = winner;
+        nextState.turn = winner;
+        nextState.currentTrick = { leader: winner, cards: [] };
+        
+        // ✅ 提前结束判断逻辑
+        const totalTricksPlayed = nextState.tricks.host + nextState.tricks.peer;
+        const remainingTricks = TOTAL_TRICKS - totalTricksPlayed;
+        const declarer = nextState.declarer!;
+        const target = nextState.contractTarget;
+        const declarerWins = nextState.tricks[declarer];
+        
+        // 情况1：定约方已经完成目标
+        if (declarerWins >= target) {
+          nextState.phase = 'GAME_OVER';
+        }
+        // 情况2：定约方数学上不可能完成（即使赢下所有剩余墩）
+        else if ((declarerWins + remainingTricks) < target) {
+          nextState.phase = 'GAME_OVER';
+        }
+        // 情况3：所有墩都打完了
+        else if (remainingTricks === 0) {
+          nextState.phase = 'GAME_OVER';
+        }
+        
+        set({ gameState: nextState });
+        get().conn?.send({ type: 'GAME_STATE_UPDATE', payload: nextState });
+      }, 1500); // 延迟1.5秒展示墩的结果
+    }
   }
 }));
