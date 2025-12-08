@@ -13,13 +13,13 @@ interface BiddingPanelProps {
 
 export const BiddingPanel: React.FC<BiddingPanelProps> = ({ currentBid, myId, turn, onBid, onPass }) => {
   const isMyTurn = myId === turn;
-  const levels: BidLevel[] = [1, 2, 3, 4, 5]; // Removed 6 and 7
+  const levels: BidLevel[] = [1, 2, 3, 4, 5]; 
   const suits: BidSuit[] = ['C', 'D', 'H', 'S', 'NT'];
 
   if (!isMyTurn) {
     return (
       <div className="flex flex-col items-center justify-center h-full animate-pulse">
-        <div className="text-2xl font-bold text-yellow-400 bg-black/50 px-6 py-2 rounded-full">
+        <div className="text-xl font-bold text-yellow-400 bg-black/50 px-4 py-2 rounded-full">
           Opponent is Bidding...
         </div>
       </div>
@@ -27,21 +27,22 @@ export const BiddingPanel: React.FC<BiddingPanelProps> = ({ currentBid, myId, tu
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-full w-full max-w-4xl mx-auto px-4 relative z-50">
-      <div className="bg-white/90 backdrop-blur-sm rounded-xl p-4 shadow-lg w-full flex flex-col gap-2">
+    // 👇 修改点：这里加了 scale-75 origin-center，强制整体缩小25%
+    // 同时也减小了 max-w-4xl 到 max-w-2xl
+    <div className="flex flex-col items-center justify-center h-full w-full max-w-2xl mx-auto px-2 relative z-50 scale-75 origin-center">
+      <div className="bg-white/90 backdrop-blur-sm rounded-xl p-3 shadow-lg w-full flex flex-col gap-2">
         <div className="flex justify-between items-center mb-1">
-          <span className="font-bold text-gray-700">Your Bid:</span>
+          <span className="font-bold text-gray-700 text-sm">Your Bid:</span>
         </div>
         
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1">
           {levels.map(level => (
-            <div key={level} className="flex gap-2 items-center justify-center">
-              <span className="font-bold text-gray-500 w-4">{level}</span>
+            <div key={level} className="flex gap-1 items-center justify-center">
+              <span className="font-bold text-gray-500 w-4 text-center">{level}</span>
               {suits.map(suit => {
                 const potentialBid: Bid = { level, suit, bidder: myId };
                 const valid = isValidBid(currentBid, potentialBid);
                 
-                // Force Red Color explicitly
                 const isRed = suit === 'H' || suit === 'D';
                 const isNT = suit === 'NT';
                 
@@ -51,9 +52,9 @@ export const BiddingPanel: React.FC<BiddingPanelProps> = ({ currentBid, myId, tu
                     disabled={!valid}
                     onClick={() => onBid(potentialBid)}
                     className={`
-                      h-10 flex-1 rounded font-bold text-lg flex items-center justify-center transition-all
+                      h-9 flex-1 rounded font-bold text-base flex items-center justify-center
                       ${valid 
-                        ? 'bg-white border border-gray-300 hover:bg-blue-50 hover:border-blue-500 shadow-sm hover:-translate-y-0.5' 
+                        ? 'bg-white border border-gray-300 active:bg-blue-100' 
                         : 'bg-gray-100 text-gray-300 border border-transparent cursor-not-allowed'}
                       ${valid && isRed ? 'text-red-600' : ''}
                       ${valid && !isRed && !isNT ? 'text-black' : ''}
@@ -70,7 +71,7 @@ export const BiddingPanel: React.FC<BiddingPanelProps> = ({ currentBid, myId, tu
 
         <button
           onClick={onPass}
-          className="mt-2 w-full bg-red-600 text-white py-3 rounded-lg font-bold text-lg hover:bg-red-700 shadow active:scale-[0.99] transition-transform"
+          className="mt-1 w-full bg-red-600 text-white py-2 rounded-lg font-bold text-base active:bg-red-800"
         >
           PASS
         </button>
