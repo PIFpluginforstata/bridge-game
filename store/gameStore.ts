@@ -57,7 +57,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Destroy old peer if exists
     if (get().peer) get().peer?.destroy();
 
-    const peer = new Peer();
+    // ✅ 修复：添加完整的 PeerJS 配置
+    const peer = new Peer(undefined, {
+      host: '0.peerjs.com',
+      port: 443,
+      secure: true,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' },
+          { 
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
+        ]
+      }
+    });
 
     return new Promise((resolve) => {
       peer.on('open', (id) => {
@@ -95,7 +111,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ status: 'initializing', errorMessage: null, role: 'peer' });
     if (get().peer) get().peer?.destroy();
 
-    const peer = new Peer();
+    // ✅ 修复：添加完整的 PeerJS 配置
+    const peer = new Peer(undefined, {
+      host: '0.peerjs.com',
+      port: 443,
+      secure: true,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' },
+          { 
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
+        ]
+      }
+    });
 
     peer.on('open', (id) => {
       set({ myId: id, peer, status: 'connecting' });
