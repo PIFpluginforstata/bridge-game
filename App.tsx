@@ -77,9 +77,9 @@ const App: React.FC = () => {
         </div>
 
         {/* --- TOP: OPPONENT --- */}
-        {/* 👉 修改：scale-50 缩小到50% */}
+        {/* 👉 修改：scale-50 缩小到50%，删除所有 hover 和 transition */}
         <div className="flex-none h-[20%] flex items-center justify-center relative z-10 scale-50 origin-top">
-            <div className="flex -space-x-8">
+            <div className="flex -space-x-4">
                 {Array.from({ length: opponentHandCount }).map((_, i) => (
                     <Card key={i} card={{ id: 'hidden', suit: 'S', rank: 'A', value: 0 }} hidden />
                 ))}
@@ -157,7 +157,7 @@ const App: React.FC = () => {
         </div>
 
         {/* --- BOTTOM: MY HAND --- */}
-        {/* 👉 修改：scale-50 缩小到50% */}
+        {/* 👉 修改：scale-50 缩小到50%，删除 hover 效果 */}
         <div className="flex-none h-[30%] w-full relative z-20 flex items-end justify-center pb-2 px-2 bg-gradient-to-t from-black/40 to-transparent">
              <div className={`flex ${handSpacingClass} scale-50 origin-bottom`}>
                 {myHand.map((card) => {
