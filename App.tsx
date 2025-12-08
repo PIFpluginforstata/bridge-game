@@ -3,7 +3,7 @@ import { useGameStore } from './store/gameStore';
 import { Lobby } from './components/Lobby';
 import { Card } from './components/Card';
 import { BiddingPanel } from './components/BiddingPanel';
-import { SUIT_SYMBOLS, SUIT_COLORS } from './constants';
+import { SUIT_SYMBOLS } from './constants';
 import { Trophy } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -24,7 +24,13 @@ const App: React.FC = () => {
   const myWonCards = gameState.wonCards[role];
   const oppWonCards = gameState.wonCards[opponentRole];
 
-  // GAME OVER SCREEN (Fullscreen Overlay is okay here as game is paused)
+  // --- 动态重叠逻辑 ---
+  // 如果手牌多于 10 张（比如开局19张），使用极度紧凑的间距 (-space-x-[2.8rem])
+  // 如果手牌变少了，恢复正常的紧凑间距 (-space-x-8)
+  // md:-space-x-12 是电脑端的默认设置，保持不变
+  const handSpacingClass = myHand.length > 10 ? '-space-x-[2.8rem]' : '-space-x-8';
+
+  // GAME OVER SCREEN
   if (gameState.phase === 'GAME_OVER') {
         const declarer = gameState.declarer!;
         const contract = gameState.contractTarget;
@@ -75,7 +81,8 @@ const App: React.FC = () => {
 
         {/* --- TOP SECTION: OPPONENT (25%) --- */}
         <div className="flex-none h-[25%] flex items-center justify-center relative z-10">
-            <div className="flex -space-x-8 md:-space-x-10 scale-75 md:scale-90 origin-top">
+            {/* 对手牌也相应缩小间距，保持美观 */}
+            <div className="flex -space-x-10 scale-75 md:scale-90 origin-top">
                 {Array.from({ length: opponentHandCount }).map((_, i) => (
                     <Card key={i} card={{ id: 'hidden', suit: 'S', rank: 'A', value: 0 }} hidden />
                 ))}
@@ -83,14 +90,12 @@ const App: React.FC = () => {
         </div>
 
         {/* --- MIDDLE SECTION: TABLE / ACTION (40%) --- */}
-        {/* CRITICAL FIX: Switch z-index to 30 during BIDDING to sit above the bottom hand area */}
         <div className={`flex-1 min-h-0 relative flex items-center justify-center ${gameState.phase === 'BIDDING' ? 'z-30' : 'z-10'}`}>
             
             {/* Won Piles (Left - Opponent) */}
             {gameState.phase === 'PLAYING' && oppWonCards.length > 0 && (
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center opacity-80 scale-75">
                     <div className="relative w-24 h-32">
-                         {/* Show last two cards stacked */}
                          {oppWonCards.slice(-2).map((c, i) => (
                              <div key={c.id} className="absolute inset-0" style={{ transform: `rotate(${(i * 10) - 5}deg) translateY(${i * -5}px)` }}>
                                  <Card card={c} disabled />
@@ -105,7 +110,6 @@ const App: React.FC = () => {
             {gameState.phase === 'PLAYING' && myWonCards.length > 0 && (
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center opacity-80 scale-75">
                     <div className="relative w-24 h-32">
-                         {/* Show last two cards stacked */}
                          {myWonCards.slice(-2).map((c, i) => (
                              <div key={c.id} className="absolute inset-0" style={{ transform: `rotate(${(i * 10) - 5}deg) translateY(${i * -5}px)` }}>
                                  <Card card={c} disabled />
@@ -115,7 +119,6 @@ const App: React.FC = () => {
                     <span className="text-white text-xs mt-2 bg-black/50 px-2 rounded">Your Wins</span>
                 </div>
             )}
-
 
             {/* SCENARIO A: BIDDING PHASE */}
             {gameState.phase === 'BIDDING' && (
@@ -133,24 +136,22 @@ const App: React.FC = () => {
             {/* SCENARIO B: PLAYING PHASE (THE TRICK) */}
             {gameState.phase === 'PLAYING' && (
                 <div className="w-full h-full relative flex items-center justify-center">
-                    {/* Placeholder for center if empty */}
                     <div className="w-32 h-32 border-2 border-white/10 rounded-full absolute pointer-events-none opacity-20"></div>
 
-                    {/* Opponent Card (Top of center) */}
+                    {/* Opponent Card */}
                     {oppCardInTrick && (
                         <div className="absolute top-[20%] z-10 animate-slide-in">
                             <Card card={oppCardInTrick.card} />
                         </div>
                     )}
 
-                    {/* My Card (Bottom of center) */}
+                    {/* My Card */}
                     {myCardInTrick && (
                          <div className="absolute bottom-[20%] z-20 animate-slide-in">
                             <Card card={myCardInTrick.card} />
                          </div>
                     )}
 
-                    {/* Current Bid Indicator (Subtle) */}
                     <div className="absolute top-2 right-4 text-white/30 text-xs text-right">
                          Contract: {gameState.currentBid?.level}{SUIT_SYMBOLS[gameState.currentBid?.suit || 'C'] || ''}
                          <br/>
@@ -162,7 +163,10 @@ const App: React.FC = () => {
 
         {/* --- BOTTOM SECTION: MY HAND (35%) --- */}
         <div className="flex-none h-[35%] w-full relative z-20 flex items-end justify-center pb-4 px-4 bg-gradient-to-t from-black/40 to-transparent">
-             <div className="flex -space-x-8 md:-space-x-12 hover:-space-x-6 transition-all duration-300">
+             {/* 应用动态间距 class: handSpacingClass 
+                移除了 hover:-space-x 效果，防止在手机上误触导致布局炸裂
+             */}
+             <div className={`flex ${handSpacingClass} md:-space-x-12 transition-all duration-300`}>
                 {myHand.map((card) => {
                     const valid = gameState.phase === 'PLAYING' && isMyTurn && !myCardInTrick;
                     return (
