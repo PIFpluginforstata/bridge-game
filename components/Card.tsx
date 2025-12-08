@@ -2,6 +2,7 @@ import React from 'react';
 import { Card as CardType } from '../types';
 import { SUIT_SYMBOLS } from '../constants';
 import clsx from 'clsx';
+import { motion } from 'framer-motion';
 
 interface CardProps {
   card: CardType;
@@ -15,47 +16,47 @@ interface CardProps {
 export const Card: React.FC<CardProps> = ({ card, onClick, selected, disabled, playable, hidden }) => {
   if (hidden) {
     return (
-      <div className="w-12 h-18 md:w-20 md:h-32 bg-blue-900 rounded-md border border-white shadow-md flex items-center justify-center relative">
-        <div className="w-full h-full border-2 border-blue-800 rounded-md opacity-50"></div>
+      <div className="w-12 h-16 md:w-16 md:h-24 bg-blue-900 rounded border border-white shadow-sm flex items-center justify-center relative">
+        <div className="w-full h-full border-2 border-blue-800 rounded opacity-50"></div>
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-30"></div>
       </div>
     );
   }
 
+  // Explicitly check for red suits
   const isRed = card.suit === 'H' || card.suit === 'D';
+  // Standard Tailwind Text Colors
   const colorClass = isRed ? 'text-red-600' : 'text-black';
 
   return (
-    <div
-      // ✅ 完全移除 motion.div，改用普通 div
-      // ✅ 不再有任何动画效果
+    <motion.div
+      whileHover={playable && !disabled ? { y: -10 } : {}}
+      animate={selected ? { y: -10 } : { y: 0 }}
       onClick={() => !disabled && onClick?.()}
       className={clsx(
-        "w-12 h-18 md:w-24 md:h-36 bg-white rounded-md shadow border border-gray-300 relative select-none",
-        // ✅ 移除所有 transition 相关的类
+        "w-12 h-16 md:w-16 md:h-24 bg-white rounded shadow-md border border-gray-300 relative select-none",
+        // CRITICAL: No grayscale or opacity-50 here.
+        // Disabled only affects the cursor.
         !disabled ? "cursor-pointer" : "cursor-default",
-        selected && "ring-2 md:ring-4 ring-yellow-400 z-10", 
-        playable && !disabled && !selected && "ring-1 ring-blue-300"
+        playable && !disabled && "ring-2 ring-yellow-400 ring-offset-1"
       )}
-      // ✅ 添加 inline style 强制禁用任何变换
-      style={{ transform: 'none', transition: 'none' }}
     >
       {/* Top Left */}
-      <div className={clsx("absolute top-0.5 left-0.5 md:top-1 md:left-1 font-bold text-xs md:text-lg leading-none flex flex-col items-center", colorClass)}>
+      <div className={clsx("absolute top-0.5 left-0.5 font-bold text-[10px] leading-none flex flex-col items-center", colorClass)}>
         <div>{card.rank}</div>
         <div>{SUIT_SYMBOLS[card.suit]}</div>
       </div>
       
-      {/* Bottom Right */}
-      <div className={clsx("absolute bottom-0.5 right-0.5 md:bottom-1 md:right-1 font-bold text-xs md:text-lg leading-none rotate-180 flex flex-col items-center", colorClass)}>
+      {/* Bottom Right (Rotated) */}
+      <div className={clsx("absolute bottom-0.5 right-0.5 font-bold text-[10px] leading-none rotate-180 flex flex-col items-center", colorClass)}>
         <div>{card.rank}</div>
         <div>{SUIT_SYMBOLS[card.suit]}</div>
       </div>
 
       {/* Center Big Symbol */}
-      <div className={clsx("absolute inset-0 flex items-center justify-center text-2xl md:text-5xl", colorClass)}>
+      <div className={clsx("absolute inset-0 flex items-center justify-center text-3xl", colorClass)}>
         {SUIT_SYMBOLS[card.suit]}
       </div>
-    </div>
+    </motion.div>
   );
 };
