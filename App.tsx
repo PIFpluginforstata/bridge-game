@@ -24,11 +24,8 @@ const App: React.FC = () => {
   const myWonCards = gameState.wonCards[role];
   const oppWonCards = gameState.wonCards[opponentRole];
 
-  // --- 动态重叠逻辑 ---
-  // 卡牌本身变小了，所以间距可以稍微小一点
-  // 10张以上：-space-x-8 (约32px重叠)
-  // 10张以下：-space-x-6
-  const handSpacingClass = myHand.length > 10 ? '-space-x-8' : '-space-x-6';
+  // 👉 修改：间距也相应减小
+  const handSpacingClass = myHand.length > 10 ? '-space-x-4' : '-space-x-3';
 
   // GAME OVER SCREEN
   if (gameState.phase === 'GAME_OVER') {
@@ -79,9 +76,9 @@ const App: React.FC = () => {
             )}
         </div>
 
-        {/* --- TOP: OPPONENT (Scale Down significantly) --- */}
-        {/* 👇 修改点：scale-60，让对手牌变得很小，腾出桌布空间 */}
-        <div className="flex-none h-[20%] flex items-center justify-center relative z-10 scale-60 origin-top">
+        {/* --- TOP: OPPONENT --- */}
+        {/* 👉 修改：scale-50 缩小到50% */}
+        <div className="flex-none h-[20%] flex items-center justify-center relative z-10 scale-50 origin-top">
             <div className="flex -space-x-8">
                 {Array.from({ length: opponentHandCount }).map((_, i) => (
                     <Card key={i} card={{ id: 'hidden', suit: 'S', rank: 'A', value: 0 }} hidden />
@@ -89,7 +86,7 @@ const App: React.FC = () => {
             </div>
         </div>
 
-        {/* --- MIDDLE: TABLE (Scale Down slightly) --- */}
+        {/* --- MIDDLE: TABLE --- */}
         <div className={`flex-1 min-h-0 relative flex items-center justify-center ${gameState.phase === 'BIDDING' ? 'z-30' : 'z-10'} scale-90`}>
             
             {/* Won Piles (Left) */}
@@ -159,10 +156,10 @@ const App: React.FC = () => {
             )}
         </div>
 
-        {/* --- BOTTOM: MY HAND (Scaled Down & No Animation) --- */}
-        {/* 👇 修改点：h-[30%] 高度减少。添加 scale-90 origin-bottom 整体缩小 */}
+        {/* --- BOTTOM: MY HAND --- */}
+        {/* 👉 修改：scale-50 缩小到50% */}
         <div className="flex-none h-[30%] w-full relative z-20 flex items-end justify-center pb-2 px-2 bg-gradient-to-t from-black/40 to-transparent">
-             <div className={`flex ${handSpacingClass} md:-space-x-12 scale-90 origin-bottom`}>
+             <div className={`flex ${handSpacingClass} scale-50 origin-bottom`}>
                 {myHand.map((card) => {
                     const valid = gameState.phase === 'PLAYING' && isMyTurn && !myCardInTrick;
                     return (
@@ -171,7 +168,7 @@ const App: React.FC = () => {
                             card={card} 
                             playable={valid}
                             disabled={!valid}
-                            selected={false} // 不再使用 selected 状态产生的位移
+                            selected={false}
                             onClick={() => sendAction({ type: 'PLAY_CARD', payload: { cardId: card.id } })}
                         />
                     );

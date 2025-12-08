@@ -27,9 +27,8 @@ export const BiddingPanel: React.FC<BiddingPanelProps> = ({ currentBid, myId, tu
   }
 
   return (
-    // 👇 修改点：这里加了 scale-75 origin-center，强制整体缩小25%
-    // 同时也减小了 max-w-4xl 到 max-w-2xl
-    <div className="flex flex-col items-center justify-center h-full w-full max-w-2xl mx-auto px-2 relative z-50 scale-75 origin-center">
+    // 👉 关键修改：scale-50 缩小到50%，max-w 也相应调小
+    <div className="flex flex-col items-center justify-center h-full w-full max-w-xl mx-auto px-2 relative z-50 scale-50 origin-center">
       <div className="bg-white/90 backdrop-blur-sm rounded-xl p-3 shadow-lg w-full flex flex-col gap-2">
         <div className="flex justify-between items-center mb-1">
           <span className="font-bold text-gray-700 text-sm">Your Bid:</span>
