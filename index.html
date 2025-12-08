@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bridge Duel P2P</title>
+    <!-- 引入 Tailwind CSS (如果你是CDN方式) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="importmap">
     {
@@ -19,10 +20,11 @@
       }
     }
     </script>
-  <link rel="stylesheet" href="/index.css">
-</head>
+  </head>
   <body class="bg-green-900 text-white overflow-hidden selection:bg-yellow-500 selection:text-black">
     <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
-</body>
+    <!-- ⚠️ 关键：这里必须指向你的 index.tsx -->
+    <!-- 如果你的 index.tsx 在根目录，就这样写： -->
+    <script type="module" src="/index.tsx"></script>
+  </body>
 </html>
