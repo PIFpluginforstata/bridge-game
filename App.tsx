@@ -3,13 +3,15 @@ import { useGameStore } from './store/gameStore';
 import { Lobby } from './components/Lobby';
 import { Card } from './components/Card';
 import { BiddingPanel } from './components/BiddingPanel';
-import { SUIT_SYMBOLS, SUIT_COLORS } from './constants';
+import { SUIT_SYMBOLS } from './constants';
 import { Trophy } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { gameState, role, myId, status, sendAction, conn } = useGameStore();
+  // 👇 修复点1：删掉了 'conn'，因为 Socket.io 版本不需要它
+  const { gameState, role, myId, status, sendAction } = useGameStore();
 
-  if (status !== 'connected' || !conn) {
+  // 👇 修复点2：只检查 status === 'connected'，不再检查 conn
+  if (status !== 'connected') {
     return <Lobby />;
   }
 
@@ -24,7 +26,10 @@ const App: React.FC = () => {
   const myWonCards = gameState.wonCards[role];
   const oppWonCards = gameState.wonCards[opponentRole];
 
-  // GAME OVER SCREEN (Fullscreen Overlay is okay here as game is paused)
+  // 手机端动态间距：牌多时挤一点
+  const handSpacingClass = myHand.length > 10 ? '-space-x-8' : '-space-x-6';
+
+  // GAME OVER SCREEN
   if (gameState.phase === 'GAME_OVER') {
         const declarer = gameState.declarer!;
         const contract = gameState.contractTarget;
@@ -35,19 +40,19 @@ const App: React.FC = () => {
 
         return (
             <div className="w-full h-screen bg-green-900 flex items-center justify-center p-4 z-[100] relative">
-                <div className="bg-white text-black p-8 rounded-2xl max-w-lg w-full text-center shadow-2xl border-4 border-yellow-500">
-                    <Trophy className={`w-24 h-24 mx-auto mb-4 ${iWon ? 'text-yellow-500' : 'text-gray-400'}`} />
-                    <h2 className="text-5xl font-bold mb-4">{iWon ? "VICTORY" : "DEFEAT"}</h2>
-                    <p className="text-xl text-gray-600 mb-8 font-mono bg-gray-100 p-4 rounded">
+                <div className="bg-white text-black p-6 rounded-xl max-w-sm w-full text-center shadow-2xl border-4 border-yellow-500">
+                    <Trophy className={`w-16 h-16 mx-auto mb-2 ${iWon ? 'text-yellow-500' : 'text-gray-400'}`} />
+                    <h2 className="text-3xl font-bold mb-2">{iWon ? "VICTORY" : "DEFEAT"}</h2>
+                    <p className="text-lg text-gray-600 mb-4 font-mono bg-gray-100 p-2 rounded">
                         Contract: {gameState.currentBid?.level}{SUIT_SYMBOLS[gameState.currentBid?.suit || 'C'] || ''} ({gameState.contractTarget})<br/>
                         Result: {gameState.tricks[declarer]} tricks
                     </p>
                     <button 
                         onClick={() => sendAction({ type: 'READY_NEXT' })}
                         disabled={gameState.readyForNext[role]}
-                        className="w-full bg-blue-600 text-white px-8 py-4 rounded-xl font-bold text-xl hover:bg-blue-700 disabled:opacity-50 transition"
+                        className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold text-lg hover:bg-blue-700 disabled:opacity-50"
                     >
-                        {gameState.readyForNext[role] ? "Waiting for Opponent..." : "Play Again"}
+                        {gameState.readyForNext[role] ? "Waiting..." : "Play Again"}
                     </button>
                 </div>
             </div>
@@ -59,68 +64,62 @@ const App: React.FC = () => {
         {/* TEXTURE BACKGROUND */}
         <div className="absolute inset-0 opacity-10 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/felt.png')] z-0"></div>
 
-        {/* --- HEADER / INFO BAR (Fixed at top) --- */}
-        <div className="flex-none bg-black/40 text-white p-2 flex justify-between items-center z-10 px-4 text-sm">
-            <div className="opacity-70">Room: {myId.slice(0, 4)}...</div>
-            <div className="flex gap-4 font-bold">
+        {/* --- HEADER --- */}
+        <div className="flex-none bg-black/40 text-white py-1 px-3 flex justify-between items-center z-10 text-xs">
+            <div className="opacity-70">Room: {myId}</div>
+            <div className="flex gap-3 font-bold">
                 <span className="text-yellow-400">You: {gameState.tricks[role]}</span>
                 <span className="text-red-400">Opp: {gameState.tricks[opponentRole]}</span>
             </div>
             {gameState.declarer && (
-                <div className="bg-white/20 px-2 py-0.5 rounded text-xs">
-                    Target: {gameState.contractTarget} ({gameState.declarer === role ? 'YOU' : 'OPP'})
+                <div className="bg-white/20 px-2 rounded text-[10px]">
+                    Target: {gameState.contractTarget}
                 </div>
             )}
         </div>
 
-        {/* --- TOP SECTION: OPPONENT (25%) --- */}
-        <div className="flex-none h-[25%] flex items-center justify-center relative z-10">
-            {/* Reduced scale slightly, removed transition */}
-            <div className="flex -space-x-8 md:-space-x-12 origin-top">
+        {/* --- TOP: OPPONENT --- */}
+        <div className="flex-none h-[20%] flex items-center justify-center relative z-10 scale-60 origin-top">
+            <div className="flex -space-x-8">
                 {Array.from({ length: opponentHandCount }).map((_, i) => (
                     <Card key={i} card={{ id: 'hidden', suit: 'S', rank: 'A', value: 0 }} hidden />
                 ))}
             </div>
         </div>
 
-        {/* --- MIDDLE SECTION: TABLE / ACTION (40%) --- */}
-        {/* CRITICAL FIX: Switch z-index to 30 during BIDDING to sit above the bottom hand area */}
-        <div className={`flex-1 min-h-0 relative flex items-center justify-center ${gameState.phase === 'BIDDING' ? 'z-30' : 'z-10'}`}>
-            
-            {/* Won Piles (Left - Opponent) */}
+        {/* --- MIDDLE: TABLE --- */}
+        <div className={`flex-1 min-h-0 relative flex items-center justify-center ${gameState.phase === 'BIDDING' ? 'z-30' : 'z-10'} scale-90`}>
+            {/* Won Piles (Left) */}
             {gameState.phase === 'PLAYING' && oppWonCards.length > 0 && (
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center opacity-80">
-                    <div className="relative w-12 h-16">
-                         {/* Show last two cards stacked */}
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col items-center opacity-60 scale-50 origin-left">
+                    <div className="relative w-24 h-32">
                          {oppWonCards.slice(-2).map((c, i) => (
                              <div key={c.id} className="absolute inset-0" style={{ transform: `rotate(${(i * 10) - 5}deg) translateY(${i * -5}px)` }}>
                                  <Card card={c} disabled />
                              </div>
                          ))}
                     </div>
-                    <span className="text-white text-[10px] mt-2 bg-black/50 px-2 rounded">Opp Wins</span>
+                    <span className="text-white text-xs mt-1 bg-black/50 px-1 rounded">Opp</span>
                 </div>
             )}
 
-            {/* Won Piles (Right - You) */}
+            {/* Won Piles (Right) */}
             {gameState.phase === 'PLAYING' && myWonCards.length > 0 && (
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center opacity-80">
-                    <div className="relative w-12 h-16">
-                         {/* Show last two cards stacked */}
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col items-center opacity-60 scale-50 origin-right">
+                    <div className="relative w-24 h-32">
                          {myWonCards.slice(-2).map((c, i) => (
                              <div key={c.id} className="absolute inset-0" style={{ transform: `rotate(${(i * 10) - 5}deg) translateY(${i * -5}px)` }}>
                                  <Card card={c} disabled />
                              </div>
                          ))}
                     </div>
-                    <span className="text-white text-[10px] mt-2 bg-black/50 px-2 rounded">Your Wins</span>
+                    <span className="text-white text-xs mt-1 bg-black/50 px-1 rounded">You</span>
                 </div>
             )}
 
-
-            {/* SCENARIO A: BIDDING PHASE */}
+            {/* BIDDING */}
             {gameState.phase === 'BIDDING' && (
-                <div className="w-full h-full flex items-center justify-center p-2">
+                <div className="w-full h-full flex items-center justify-center">
                     <BiddingPanel 
                         currentBid={gameState.currentBid}
                         myId={role}
@@ -131,28 +130,24 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            {/* SCENARIO B: PLAYING PHASE (THE TRICK) */}
+            {/* PLAYING */}
             {gameState.phase === 'PLAYING' && (
                 <div className="w-full h-full relative flex items-center justify-center">
-                    {/* Placeholder for center if empty */}
                     <div className="w-24 h-24 border-2 border-white/10 rounded-full absolute pointer-events-none opacity-20"></div>
 
-                    {/* Opponent Card (Top of center) */}
                     {oppCardInTrick && (
-                        <div className="absolute top-[25%] z-10 animate-slide-in">
+                        <div className="absolute top-[25%] z-10">
                             <Card card={oppCardInTrick.card} />
                         </div>
                     )}
 
-                    {/* My Card (Bottom of center) */}
                     {myCardInTrick && (
-                         <div className="absolute bottom-[25%] z-20 animate-slide-in">
+                         <div className="absolute bottom-[25%] z-20">
                             <Card card={myCardInTrick.card} />
                          </div>
                     )}
 
-                    {/* Current Bid Indicator (Subtle) */}
-                    <div className="absolute top-2 right-4 text-white/30 text-xs text-right">
+                    <div className="absolute top-0 right-2 text-white/30 text-[10px] text-right">
                          Contract: {gameState.currentBid?.level}{SUIT_SYMBOLS[gameState.currentBid?.suit || 'C'] || ''}
                          <br/>
                          Trump: {gameState.trumpBroken ? 'Broken' : 'Safe'}
@@ -161,10 +156,9 @@ const App: React.FC = () => {
             )}
         </div>
 
-        {/* --- BOTTOM SECTION: MY HAND (35%) --- */}
-        <div className="flex-none h-[35%] w-full relative z-20 flex items-end justify-center pb-4 px-4 bg-gradient-to-t from-black/40 to-transparent">
-             {/* CRITICAL FIX: Removed hover:-space-x-6 and transition-all. Removed scale. Fixed spacing for w-12 cards. */}
-             <div className="flex -space-x-8 md:-space-x-12">
+        {/* --- BOTTOM: MY HAND --- */}
+        <div className="flex-none h-[30%] w-full relative z-20 flex items-end justify-center pb-2 px-2 bg-gradient-to-t from-black/40 to-transparent">
+             <div className={`flex ${handSpacingClass} md:-space-x-12 scale-90 origin-bottom`}>
                 {myHand.map((card) => {
                     const valid = gameState.phase === 'PLAYING' && isMyTurn && !myCardInTrick;
                     return (
@@ -173,6 +167,7 @@ const App: React.FC = () => {
                             card={card} 
                             playable={valid}
                             disabled={!valid}
+                            selected={false}
                             onClick={() => sendAction({ type: 'PLAY_CARD', payload: { cardId: card.id } })}
                         />
                     );
