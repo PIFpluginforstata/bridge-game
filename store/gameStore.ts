@@ -5,14 +5,12 @@ import { GameState, PlayerId, PlayerAction } from '../types';
 import { generateDeck, shuffleDeck, sortHand, canPlayCard, determineTrickWinner } from '../utils/gameLogic';
 import { BASE_TRICK_TARGET, TOTAL_TRICKS } from '../constants';
 
-// 🔧 从全局获取 io (因为是 script 标签加载的)
 declare global {
   interface Window {
     io: any;
   }
 }
 
-// ⚠️ 填入你的 Replit 服务器 URL
 const SERVER_URL = 'https://4d530a6a-be03-452c-8d46-8bc062606e9a-00-jq5yqln28u63.pike.replit.dev';
 
 interface GameStore {
@@ -27,7 +25,7 @@ interface GameStore {
   joinRoom: (roomId: string) => void;
   sendAction: (action: PlayerAction) => void;
   resetGame: () => void;
-  processAction: (action: PlayerAction, fromPlayer: PlayerId) => void;
+  processAction: (action: PlayerAction, fromPlayer: PlayerId) => boolean; // ✅ 返回布尔值
 }
 
 const INITIAL_GAME_STATE: GameState = {
@@ -63,7 +61,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get().socket?.disconnect();
     }
 
-    // 🔧 使用全局的 io
     const socket = window.io(SERVER_URL, {
       transports: ['websocket', 'polling']
     });
@@ -106,12 +103,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
     socket.on('game_action', (action: PlayerAction) => {
       console.log('📥 Received action:', action);
       const opponent = get().role === 'host' ? 'peer' : 'host';
-      get().processAction(action, opponent);
+      const success = get().processAction(action, opponent);
+      
+      // ✅ 如果对方发来的动作无效，请求同步状态
+      if (!success) {
+        console.warn('⚠️ Received invalid action, requesting state sync');
+        socket.emit('sync_request', { roomId });
+      }
     });
 
     socket.on('sync_state', (state: GameState) => {
-      console.log('📥 Synced state');
+      console.log('🔄 Synced state');
       set({ gameState: state, status: 'connected' });
+    });
+
+    // ✅ 处理同步请求
+    socket.on('sync_request', () => {
+      console.log('🔄 Sync requested by opponent');
+      if (get().role === 'host') {
+        socket.emit('sync_state', { roomId, state: get().gameState });
+      }
     });
 
     set({ socket });
@@ -120,8 +131,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
   sendAction: (action) => {
     const { socket, myId, role, processAction } = get();
     
-    processAction(action, role);
-    socket?.emit('game_action', { roomId: myId, action });
+    // ✅ 先处理，检查是否成功
+    const success = processAction(action, role);
+    
+    // ✅ 只有成功时才发送给对方
+    if (success) {
+      socket?.emit('game_action', { roomId: myId, action });
+    } else {
+      console.warn('❌ Action rejected, not sending to opponent');
+    }
   },
   
   resetGame: () => {
@@ -157,11 +175,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     socket?.emit('sync_state', { roomId: myId, state: newState });
   },
   
-  processAction: (action, fromPlayer) => {
+  processAction: (action, fromPlayer): boolean => { // ✅ 返回 boolean
     const { gameState, role, resetGame, socket, myId } = get();
     
+    // ✅ 严格验证轮次（除了 READY_NEXT）
     if (action.type !== 'READY_NEXT' && gameState.phase !== 'GAME_OVER' && gameState.turn !== fromPlayer) {
-      // Validation check (optional strict mode)
+      console.warn(`❌ Not ${fromPlayer}'s turn (current: ${gameState.turn})`);
+      return false;
     }
     
     let newState = { ...gameState };
@@ -189,7 +209,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             if (role === 'host') {
               resetGame();
             }
-            return;
+            return true;
           } else {
             newState.turn = fromPlayer === 'host' ? 'peer' : 'host';
           }
@@ -197,13 +217,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
         break;
         
       case 'PLAY_CARD':
-        if (!action.payload?.cardId) return;
+        if (!action.payload?.cardId) return false;
         const hand = newState.hands[fromPlayer];
         const card = hand.find(c => c.id === action.payload?.cardId);
-        if (!card) return;
+        if (!card) {
+          console.warn('❌ Card not found in hand');
+          return false;
+        }
         
+        // ✅ 两边都验证！
         const validCheck = canPlayCard(card, hand, newState, fromPlayer);
-        if (fromPlayer === role && !validCheck.valid) return;
+        if (!validCheck.valid) {
+          console.warn(`❌ Invalid card play: ${validCheck.reason}`);
+          return false;
+        }
         
         newState.hands = { 
           ...newState.hands, 
@@ -228,9 +255,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         
         if (role === 'host' && newState.readyForNext.host && newState.readyForNext.peer) {
           resetGame();
-          return;
+          return true;
         }
         break;
+        
+      default:
+        return false;
     }
     
     set({ gameState: newState });
@@ -271,5 +301,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set({ gameState: nextState });
       }, 1500);
     }
+    
+    return true; // ✅ 成功
   }
 }));
