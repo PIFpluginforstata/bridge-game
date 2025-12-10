@@ -3,7 +3,7 @@ import { Copy, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { useGameStore } from '../store/gameStore';
 
 export const Lobby: React.FC = () => {
-  const { createGame, joinGame, myId, status, errorMessage } = useGameStore();
+  const { joinRoom, myId, status, errorMessage } = useGameStore();
   const [hostIdInput, setHostIdInput] = useState('');
   const [mode, setMode] = useState<'SELECT' | 'HOST' | 'JOIN'>('SELECT');
 
@@ -14,24 +14,24 @@ export const Lobby: React.FC = () => {
 
   const handleHost = async () => {
     setMode('HOST');
-    await createGame();
+    const roomId = `room-${Math.random().toString(36).slice(2, 9)}`;
+    joinRoom(roomId);
   };
 
   const handleJoin = async () => {
     if (!hostIdInput) return;
-    // CRITICAL: Trim whitespace to prevent "Invalid ID" errors
-    joinGame(hostIdInput.trim());
+    joinRoom(hostIdInput.trim());
   };
 
   const handleBack = () => {
-      window.location.reload(); // Hard reset is safest for P2P cleanup
+    window.location.reload();
   };
 
   if (mode === 'SELECT') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-green-900">
         <div className="bg-white/10 backdrop-blur-md p-8 rounded-2xl shadow-2xl max-w-md w-full border border-white/20">
-          <h1 className="text-4xl font-bold text-center mb-2">Bridge Duel</h1>
+          <h1 className="text-4xl font-bold text-center mb-2 text-white">Bridge Duel</h1>
           <p className="text-center text-gray-200 mb-8">1v1 Online P2P Bridge</p>
           
           <div className="space-y-4">
@@ -49,11 +49,11 @@ export const Lobby: React.FC = () => {
 
   if (mode === 'HOST') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="bg-white/10 backdrop-blur-md p-8 rounded-2xl shadow-2xl max-w-md w-full border border-white/20 text-center">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-green-900">
+        <div className="bg-white/10 backdrop-blur-md p-8 rounded-2xl shadow-2xl max-w-md w-full border border-white/20 text-center text-white">
           <h2 className="text-2xl font-bold mb-4">Waiting for Player</h2>
           
-          {status === 'initializing' && <Loader2 className="animate-spin mx-auto h-8 w-8 mb-4" />}
+          {status === 'connecting' && <Loader2 className="animate-spin mx-auto h-8 w-8 mb-4" />}
           
           {myId && (
             <div className="bg-black/30 p-4 rounded-lg mb-6">
@@ -66,14 +66,14 @@ export const Lobby: React.FC = () => {
           )}
 
           <div className="flex items-center justify-center gap-2 text-gray-400">
-             {status === 'connected' ? (
-                 <span className="text-green-400 font-bold">Connected! Starting...</span>
-             ) : (
-                 <>
-                    <Loader2 className="animate-spin" size={16} />
-                    <span>Waiting for connection...</span>
-                 </>
-             )}
+            {status === 'connected' ? (
+              <span className="text-green-400 font-bold">Connected! Starting...</span>
+            ) : (
+              <>
+                <Loader2 className="animate-spin" size={16} />
+                <span>Waiting for connection...</span>
+              </>
+            )}
           </div>
           
           <button onClick={handleBack} className="mt-8 text-sm text-gray-400 hover:text-white underline">Cancel</button>
@@ -83,14 +83,14 @@ export const Lobby: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="bg-white/10 backdrop-blur-md p-8 rounded-2xl shadow-2xl max-w-md w-full border border-white/20">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-green-900">
+      <div className="bg-white/10 backdrop-blur-md p-8 rounded-2xl shadow-2xl max-w-md w-full border border-white/20 text-white">
         <h2 className="text-2xl font-bold mb-6 text-center">Join Game</h2>
         
         {errorMessage && (
-            <div className="bg-red-500/80 p-3 rounded mb-4 flex items-center gap-2 text-sm">
-                <AlertCircle size={16}/> {errorMessage}
-            </div>
+          <div className="bg-red-500/80 p-3 rounded mb-4 flex items-center gap-2 text-sm">
+            <AlertCircle size={16}/> {errorMessage}
+          </div>
         )}
         
         <input 
