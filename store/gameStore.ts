@@ -11,21 +11,69 @@ declare global {
   }
 }
 
-const SERVER_URL = 'https://4d530a6a-be03-452c-8d46-8bc062606e9a-00-jq5yqln28u63.pike.replit.dev';
+// 多服务器配置 - 用户可以选择最适合的服务器
+export const SERVER_LIST = [
+  {
+    name: 'Replit (Default)',
+    url: 'https://4d530a6a-be03-452c-8d46-8bc062606e9a-00-jq5yqln28u63.pike.replit.dev',
+    region: 'US'
+  },
+  {
+    name: 'Custom Server',
+    url: '', // 用户自定义
+    region: 'Custom'
+  }
+];
+
+// 从localStorage读取自定义服务器URL
+const getStoredServerUrl = (): string => {
+  try {
+    return localStorage.getItem('bridge_custom_server') || '';
+  } catch {
+    return '';
+  }
+};
+
+// 保存自定义服务器URL
+export const saveCustomServerUrl = (url: string) => {
+  try {
+    localStorage.setItem('bridge_custom_server', url);
+  } catch {
+    // ignore
+  }
+};
+
+// 获取当前使用的服务器URL
+const getCurrentServerUrl = (): string => {
+  const customUrl = getStoredServerUrl();
+  return customUrl || SERVER_LIST[0].url;
+};
+
+// 连接诊断信息
+interface ConnectionDiagnostics {
+  latency: number | null;
+  serverUrl: string;
+  transport: string | null;
+  reconnectAttempts: number;
+  lastPingTime: number | null;
+}
 
 interface GameStore {
   socket: Socket | null;
   myId: string;
   role: PlayerId;
-  status: 'idle' | 'connecting' | 'connected' | 'error';
+  status: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
   errorMessage: string | null;
-  
+  diagnostics: ConnectionDiagnostics;
+
   gameState: GameState;
-  
-  joinRoom: (roomId: string) => void;
+
+  joinRoom: (roomId: string, customServerUrl?: string) => void;
+  disconnect: () => void;
   sendAction: (action: PlayerAction) => void;
   resetGame: () => void;
-  processAction: (action: PlayerAction, fromPlayer: PlayerId) => boolean; // ✅ 返回布尔值
+  processAction: (action: PlayerAction, fromPlayer: PlayerId) => boolean;
+  pingServer: () => void;
 }
 
 const INITIAL_GAME_STATE: GameState = {
@@ -52,36 +100,125 @@ export const useGameStore = create<GameStore>((set, get) => ({
   role: 'host',
   status: 'idle',
   errorMessage: null,
+  diagnostics: {
+    latency: null,
+    serverUrl: '',
+    transport: null,
+    reconnectAttempts: 0,
+    lastPingTime: null,
+  },
   gameState: INITIAL_GAME_STATE,
 
-  joinRoom: (roomId: string) => {
-    set({ status: 'connecting', errorMessage: null, myId: roomId });
-    
+  joinRoom: (roomId: string, customServerUrl?: string) => {
+    // 确定要使用的服务器URL
+    const serverUrl = customServerUrl || getCurrentServerUrl();
+
+    // 如果提供了自定义URL，保存它
+    if (customServerUrl) {
+      saveCustomServerUrl(customServerUrl);
+    }
+
+    set({
+      status: 'connecting',
+      errorMessage: null,
+      myId: roomId,
+      diagnostics: {
+        latency: null,
+        serverUrl,
+        transport: null,
+        reconnectAttempts: 0,
+        lastPingTime: null,
+      }
+    });
+
     if (get().socket) {
       get().socket?.disconnect();
     }
 
-    const socket = window.io(SERVER_URL, {
-      transports: ['websocket', 'polling']
+    console.log('🔗 Connecting to server:', serverUrl);
+
+    // 改进的Socket.io配置 - 针对跨地区连接优化
+    const socket = window.io(serverUrl, {
+      transports: ['websocket', 'polling'], // WebSocket优先，polling作为备选
+      reconnection: true, // 启用自动重连
+      reconnectionAttempts: 10, // 最多重连10次
+      reconnectionDelay: 1000, // 初始重连延迟1秒
+      reconnectionDelayMax: 10000, // 最大重连延迟10秒
+      timeout: 30000, // 连接超时30秒（适应高延迟网络）
+      forceNew: true, // 强制新连接
     });
 
+    // 连接成功
     socket.on('connect', () => {
       console.log('✅ Connected to server');
+      const transport = socket.io?.engine?.transport?.name || 'unknown';
+      set(state => ({
+        diagnostics: { ...state.diagnostics, transport, reconnectAttempts: 0 }
+      }));
+      socket.emit('join_room', roomId);
+      // 立即测量延迟
+      get().pingServer();
+    });
+
+    // 连接错误
+    socket.on('connect_error', (err: Error) => {
+      console.error('❌ Connection failed:', err.message);
+      set({
+        status: 'error',
+        errorMessage: `连接失败: ${err.message}。请检查服务器是否运行，或尝试使用自定义服务器。`
+      });
+    });
+
+    // 断开连接
+    socket.on('disconnect', (reason: string) => {
+      console.warn('⚠️ Disconnected:', reason);
+      if (reason === 'io server disconnect') {
+        // 服务器主动断开，需要手动重连
+        set({ status: 'error', errorMessage: '服务器断开连接' });
+      } else {
+        // 其他原因，Socket.io会自动重连
+        set({ status: 'reconnecting' });
+      }
+    });
+
+    // 重连中
+    socket.on('reconnect_attempt', (attempt: number) => {
+      console.log('🔄 Reconnecting... attempt', attempt);
+      set(state => ({
+        status: 'reconnecting',
+        diagnostics: { ...state.diagnostics, reconnectAttempts: attempt }
+      }));
+    });
+
+    // 重连成功
+    socket.on('reconnect', () => {
+      console.log('✅ Reconnected!');
+      set({ status: 'connected' });
       socket.emit('join_room', roomId);
     });
 
-    socket.on('connect_error', (err: Error) => {
-      console.error('❌ Connection failed:', err);
-      set({ 
-        status: 'error', 
-        errorMessage: 'Cannot connect to server. Please check if Replit is running.' 
+    // 重连失败
+    socket.on('reconnect_failed', () => {
+      console.error('❌ Reconnection failed');
+      set({
+        status: 'error',
+        errorMessage: '重连失败。请检查网络连接或尝试使用其他服务器。'
       });
+    });
+
+    // Pong响应 - 用于测量延迟
+    socket.on('pong_response', (data: { timestamp: number }) => {
+      const latency = Date.now() - data.timestamp;
+      console.log(`📡 Latency: ${latency}ms`);
+      set(state => ({
+        diagnostics: { ...state.diagnostics, latency, lastPingTime: Date.now() }
+      }));
     });
 
     socket.on('role_assigned', (role: PlayerId) => {
       console.log('🎮 Role assigned:', role);
       set({ role });
-      
+
       if (role === 'host') {
         get().resetGame();
       }
@@ -90,7 +227,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     socket.on('player_connected', () => {
       console.log('👋 Opponent connected!');
       set({ status: 'connected' });
-      
+
       if (get().role === 'host') {
         socket.emit('sync_state', { roomId, state: get().gameState });
       }
@@ -104,8 +241,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       console.log('📥 Received action:', action);
       const opponent = get().role === 'host' ? 'peer' : 'host';
       const success = get().processAction(action, opponent);
-      
-      // ✅ 如果对方发来的动作无效，请求同步状态
+
       if (!success) {
         console.warn('⚠️ Received invalid action, requesting state sync');
         socket.emit('sync_request', { roomId });
@@ -117,7 +253,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ gameState: state, status: 'connected' });
     });
 
-    // ✅ 处理同步请求
     socket.on('sync_request', () => {
       console.log('🔄 Sync requested by opponent');
       if (get().role === 'host') {
@@ -126,6 +261,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
 
     set({ socket });
+  },
+
+  disconnect: () => {
+    const { socket } = get();
+    if (socket) {
+      socket.disconnect();
+    }
+    set({
+      socket: null,
+      status: 'idle',
+      errorMessage: null,
+      gameState: INITIAL_GAME_STATE,
+      diagnostics: {
+        latency: null,
+        serverUrl: '',
+        transport: null,
+        reconnectAttempts: 0,
+        lastPingTime: null,
+      }
+    });
+  },
+
+  pingServer: () => {
+    const { socket } = get();
+    if (socket?.connected) {
+      socket.emit('ping_request', { timestamp: Date.now() });
+    }
   },
   
   sendAction: (action) => {

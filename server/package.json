@@ -1,0 +1,24 @@
+{
+  "name": "bridge-duel-server",
+  "version": "1.0.0",
+  "description": "Bridge Duel - Socket.io signaling server for cross-region multiplayer",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "socket.io": "^4.7.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "bridge",
+    "card-game",
+    "socket.io",
+    "multiplayer"
+  ],
+  "author": "",
+  "license": "MIT"
+}
