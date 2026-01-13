@@ -11,7 +11,8 @@ declare global {
   }
 }
 
-const SERVER_URL = 'https://4d530a6a-be03-452c-8d46-8bc062606e9a-00-jq5yqln28u63.pike.replit.dev';
+// Use the current page origin as the server URL (works on Replit and any deployment)
+const SERVER_URL = typeof window !== 'undefined' ? window.location.origin : '';
 
 interface GameStore {
   socket: Socket | null;
